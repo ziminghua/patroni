@@ -13,6 +13,19 @@ import threading
 import time
 import yaml
 
+mswindows = (sys.platform == "win32")
+
+
+class Popen(subprocess.Popen):
+
+    if mswindows:
+
+        def terminate(self):
+            self.send_signal(getattr(signal, 'CTRL_C_EVENT'))
+
+        def kill(self):
+            super(Popen, self).terminate()
+
 
 @six.add_metaclass(abc.ABCMeta)
 class AbstractController(object):
@@ -138,9 +151,8 @@ class PatroniController(AbstractController):
         if isinstance(self._context.dcs_ctl, KubernetesController):
             self._context.dcs_ctl.create_pod(self._name[8:], self._scope)
             os.environ['PATRONI_KUBERNETES_POD_IP'] = '10.0.0.' + self._name[-1]
-        return subprocess.Popen([sys.executable, '-m', 'coverage', 'run',
-                                '--source=patroni', '-p', 'patroni.py', self._config],
-                                stdout=self._log, stderr=subprocess.STDOUT, cwd=self._work_directory)
+        return Popen([sys.executable, '-m', 'coverage', 'run', '--source=patroni', '-p', 'patroni.py', self._config],
+                     stdout=self._log, stderr=subprocess.STDOUT, cwd=self._work_directory)
 
     def stop(self, kill=False, timeout=15, postgres=False):
         if postgres:
@@ -345,8 +357,8 @@ class ConsulController(AbstractDcsController):
         self._config_file = self._work_directory + '.json'
         with open(self._config_file, 'wb') as f:
             f.write(b'{"session_ttl_min":"5s","server":true,"bootstrap":true,"advertise_addr":"127.0.0.1"}')
-        return subprocess.Popen(['consul', 'agent', '-config-file', self._config_file, '-data-dir',
-                                 self._work_directory], stdout=self._log, stderr=subprocess.STDOUT)
+        return Popen(['consul', 'agent', '-config-file', self._config_file, '-data-dir', self._work_directory],
+                     stdout=self._log, stderr=subprocess.STDOUT)
 
     def stop(self, kill=False, timeout=15):
         super(ConsulController, self).stop(kill=kill, timeout=timeout)
@@ -385,8 +397,8 @@ class EtcdController(AbstractDcsController):
         self._client = etcd.Client(port=2379)
 
     def _start(self):
-        return subprocess.Popen(["etcd", "--debug", "--data-dir", self._work_directory],
-                                stdout=self._log, stderr=subprocess.STDOUT)
+        return Popen(["etcd", "--debug", "--data-dir", self._work_directory],
+                     stdout=self._log, stderr=subprocess.STDOUT)
 
     def query(self, key, scope='batman'):
         import etcd
