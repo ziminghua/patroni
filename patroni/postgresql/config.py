@@ -390,6 +390,7 @@ class ConfigHandler(object):
         # In case we are using custom bootstrap from spilo image with PITR it fails if it contains increasing
         # values like Max_connections. We disable hot_standby so it will accept increasing values.
         if self._postgresql.bootstrap.running_custom_bootstrap:
+            configuration = configuration or self._server_parameters.copy()
             configuration['hot_standby'] = 'off'
 
         with ConfigWriter(self._postgresql_conf) as f:
