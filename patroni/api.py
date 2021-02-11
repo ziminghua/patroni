@@ -197,7 +197,7 @@ class RestApiHandler(BaseHTTPRequestHandler):
     def do_PATCH_config(self):
         request = self._read_json_content()
         if request:
-            cluster = self.server.patroni.dcs.get_cluster()
+            cluster = self.server.patroni.dcs.get_cluster(True)
             if not (cluster.config and cluster.config.modify_index):
                 return self.send_error(503)
             data = cluster.config.data.copy()
@@ -634,7 +634,10 @@ class RestApiServer(ThreadingMixIn, HTTPServer, Thread):
         if self.__protocol == 'https':
             import ssl
             ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=ssl_options.get('cafile'))
-            ctx.load_cert_chain(certfile=ssl_options['certfile'], keyfile=ssl_options.get('keyfile'))
+            if ssl_options.get('ciphers'):
+                ctx.set_ciphers(ssl_options['ciphers'])
+            ctx.load_cert_chain(certfile=ssl_options['certfile'], keyfile=ssl_options.get('keyfile'),
+                                password=ssl_options.get('keyfile_password'))
             verify_client = ssl_options.get('verify_client')
             if verify_client:
                 modes = {'none': ssl.CERT_NONE, 'optional': ssl.CERT_OPTIONAL, 'required': ssl.CERT_REQUIRED}
@@ -673,7 +676,8 @@ class RestApiServer(ThreadingMixIn, HTTPServer, Thread):
         if 'listen' not in config:  # changing config in runtime
             raise ValueError('Can not find "restapi.listen" config')
 
-        ssl_options = {n: config[n] for n in ('certfile', 'keyfile', 'cafile') if n in config}
+        ssl_options = {n: config[n] for n in ('certfile', 'keyfile', 'keyfile_password',
+                                              'cafile', 'ciphers') if n in config}
 
         self.http_extra_headers = config.get('http_extra_headers') or {}
         self.http_extra_headers.update((config.get('https_extra_headers') or {}) if ssl_options.get('certfile') else {})
