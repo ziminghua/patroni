@@ -144,7 +144,7 @@ class SlotsHandler(object):
     @contextmanager
     def _get_local_connection_cursor(self, database):
         conn_kwargs = self._postgresql.config.local_connect_kwargs
-        conn_kwargs['database'] = database
+        conn_kwargs['dbname'] = database
         with get_connection_cursor(**conn_kwargs) as cur:
             yield cur
 
@@ -235,7 +235,7 @@ class SlotsHandler(object):
     @contextmanager
     def _get_leader_connection_cursor(self, leader):
         conn_kwargs = leader.conn_kwargs(self._postgresql.config.rewind_credentials)
-        conn_kwargs['database'] = self._postgresql.database
+        conn_kwargs['dbname'] = self._postgresql.database
         with get_connection_cursor(connect_timeout=3, options="-c statement_timeout=2000", **conn_kwargs) as cur:
             yield cur
 
