@@ -1,177 +1,195 @@
 |Tests Status| |Coverage Status|
 
-Patroni: A Template for PostgreSQL HA with ZooKeeper, etcd or Consul
---------------------------------------------------------------------
-
-You can find a version of this documentation that is searchable and also easier to navigate at `patroni.readthedocs.io <https://patroni.readthedocs.io>`__.
-
-
-There are many ways to run high availability with PostgreSQL; for a list, see the `PostgreSQL Documentation <https://wiki.postgresql.org/wiki/Replication,_Clustering,_and_Connection_Pooling>`__.
-
-Patroni is a template for you to create your own customized, high-availability solution using Python and - for maximum accessibility - a distributed configuration store like `ZooKeeper <https://zookeeper.apache.org/>`__, `etcd <https://github.com/coreos/etcd>`__, `Consul <https://github.com/hashicorp/consul>`__ or `Kubernetes <https://kubernetes.io>`__. Database engineers, DBAs, DevOps engineers, and SREs who are looking to quickly deploy HA PostgreSQL in the datacenter-or anywhere else-will hopefully find it useful.
-
-We call Patroni a "template" because it is far from being a one-size-fits-all or plug-and-play replication system. It will have its own caveats. Use wisely.
-
-Currently supported PostgreSQL versions: 9.3 to 13.
-
-**Note to Kubernetes users**: Patroni can run natively on top of Kubernetes. Take a look at the `Kubernetes <https://github.com/zalando/patroni/blob/master/docs/kubernetes.rst>`__ chapter of the Patroni documentation.
-
-.. contents::
-    :local:
-    :depth: 1
-    :backlinks: none
-
-=================
-How Patroni Works
-=================
-
-Patroni originated as a fork of `Governor <https://github.com/compose/governor>`__, the project from Compose. It includes plenty of new features.
-
-For an example of a Docker-based deployment with Patroni, see `Spilo <https://github.com/zalando/spilo>`__, currently in use at Zalando.
-
-For additional background info, see:
-
-* `Elephants on Automatic: HA Clustered PostgreSQL with Helm <https://www.youtube.com/watch?v=CftcVhFMGSY>`_, talk by Josh Berkus and Oleksii Kliukin at KubeCon Berlin 2017
-* `PostgreSQL HA with Kubernetes and Patroni <https://www.youtube.com/watch?v=iruaCgeG7qs>`__, talk by Josh Berkus at KubeCon 2016 (video)
-* `Feb. 2016 Zalando Tech blog post <https://tech.zalando.de/blog/zalandos-patroni-a-template-for-high-availability-postgresql/>`__
-
-==================
-Development Status
-==================
-
-Patroni is in active development and accepts contributions. See our `Contributing <https://github.com/zalando/patroni/blob/master/docs/CONTRIBUTING.rst>`__ section below for more details.
-
-We report new releases information `here <https://github.com/zalando/patroni/releases>`__.
-
-=========
-Community
-=========
-
-There are two places to connect with the Patroni community: `on github <https://github.com/zalando/patroni>`__, via Issues and PRs, and on channel #patroni in the `PostgreSQL Slack <https://postgres-slack.herokuapp.com/>`__.  If you're using Patroni, or just interested, please join us.
-
-===================================
-Technical Requirements/Installation
-===================================
-
-**Pre-requirements for Mac OS**
-
-To install requirements on a Mac, run the following:
-
-::
-
-    brew install postgresql etcd haproxy libyaml python
-
-**Psycopg2**
-
-Starting from `psycopg2-2.8 <http://initd.org/psycopg/articles/2019/04/04/psycopg-28-released/>`__ the binary version of psycopg2 will no longer be installed by default. Installing it from the source code requires C compiler and postgres+python dev packages.
-Since in the python world it is not possible to specify dependency as ``psycopg2 OR psycopg2-binary`` you will have to decide how to install it.
-
-There are a few options available:
-
-1. Use the package manager from your distro
-
-::
-
-    sudo apt-get install python-psycopg2   # install python2 psycopg2 module on Debian/Ubuntu
-    sudo apt-get install python3-psycopg2  # install python3 psycopg2 module on Debian/Ubuntu
-    sudo yum install python-psycopg2       # install python2 psycopg2 on RedHat/Fedora/CentOS
-
-2. Install psycopg2 from the binary package
-
-::
-
-    pip install psycopg2-binary
-
-3. Install psycopg2 from source
-
-::
-
-    pip install psycopg2>=2.5.4
-
-**General installation for pip**
-
-Patroni can be installed with pip:
-
-::
-
-    pip install patroni[dependencies]
-
-where dependencies can be either empty, or consist of one or more of the following:
-
-etcd or etcd3
-    `python-etcd` module in order to use Etcd as DCS
-consul
-    `python-consul` module in order to use Consul as DCS
-zookeeper
-    `kazoo` module in order to use Zookeeper as DCS
-exhibitor
-    `kazoo` module in order to use Exhibitor as DCS (same dependencies as for Zookeeper)
-kubernetes
-    `kubernetes` module in order to use Kubernetes as DCS in Patroni
-raft
-    `pysyncobj` module in order to use python Raft implementation as DCS
-aws
-    `boto` in order to use AWS callbacks
-
-For example, the command in order to install Patroni together with dependencies for Etcd as a DCS and AWS callbacks is:
-
-::
-
-    pip install patroni[etcd,aws]
-
-Note that external tools to call in the replica creation or custom bootstrap scripts (i.e. WAL-E) should be installed independently of Patroni.
-
-=======================
-Running and Configuring
-=======================
-
-To get started, do the following from different terminals:
-::
-
-    > etcd --data-dir=data/etcd --enable-v2=true
-    > ./patroni.py postgres0.yml
-    > ./patroni.py postgres1.yml
-
-You will then see a high-availability cluster start up. Test different settings in the YAML files to see how the cluster's behavior changes. Kill some of the components to see how the system behaves.
-
-Add more ``postgres*.yml`` files to create an even larger cluster.
-
-Patroni provides an `HAProxy <http://www.haproxy.org/>`__ configuration, which will give your application a single endpoint for connecting to the cluster's leader. To configure,
-run:
-
-::
-
-    > haproxy -f haproxy.cfg
-
-::
-
-    > psql --host 127.0.0.1 --port 5000 postgres
-
-==================
-YAML Configuration
-==================
-
-Go `here <https://github.com/zalando/patroni/blob/master/docs/SETTINGS.rst>`__ for comprehensive information about settings for etcd, consul, and ZooKeeper. And for an example, see `postgres0.yml <https://github.com/zalando/patroni/blob/master/postgres0.yml>`__.
-
-=========================
-Environment Configuration
-=========================
-
-Go `here <https://github.com/zalando/patroni/blob/master/docs/ENVIRONMENT.rst>`__ for comprehensive information about configuring(overriding) settings via environment variables.
-
-===================
-Replication Choices
-===================
-
-Patroni uses Postgres' streaming replication, which is asynchronous by default. Patroni's asynchronous replication configuration allows for ``maximum_lag_on_failover`` settings. This setting ensures failover will not occur if a follower is more than a certain number of bytes behind the leader. This setting should be increased or decreased based on business requirements. It's also possible to use synchronous replication for better durability guarantees. See `replication modes documentation <https://github.com/zalando/patroni/blob/master/docs/replication_modes.rst>`__ for details.
-
-======================================
-Applications Should Not Use Superusers
-======================================
-
-When connecting from an application, always use a non-superuser. Patroni requires access to the database to function properly. By using a superuser from an application, you can potentially use the entire connection pool, including the connections reserved for superusers, with the ``superuser_reserved_connections`` setting. If Patroni cannot access the Primary because the connection pool is full, behavior will be undesirable.
-
-.. |Tests Status| image:: https://github.com/zalando/patroni/actions/workflows/tests.yaml/badge.svg
-   :target: https://github.com/zalando/patroni/actions/workflows/tests.yaml?query=branch%3Amaster
-.. |Coverage Status| image:: https://coveralls.io/repos/zalando/patroni/badge.svg?branch=master
-   :target: https://coveralls.io/github/zalando/patroni?branch=master
+# Patroni 一款PGSQL高可用的方案
+
+## 仓库目的
+
+由于官方并为直接提供可用的docker镜像，只提供了有一些Dockerfile的例子，所以。。。。。。。。。基于官方的例子进行魔改。剔除了其中的haproxy的依赖，以及我们目前没有其他的DCS环境，所以直接采用了etcd进行部署。相关修改详见[Dockerfile](./Dockerfile)、[entrypoint.sh](./docker/entrypoint.sh)。
+
+## 使用方式
+```
+docker run -t digibird/patroni_pgsql10 .
+```
+
+### 修改配置
+
+patroni简化了pgsql本身的主从配置，都通过patroni进行管理，大致只需要有两个配置文件`patroni.env`和`postgres.yml`。
+
+#### patroni.env
+
+PS：集群时才需要
+
+````
+# etcd集群节点列表
+ETCD_INITIAL_CLUSTER=etcd1=http://192.168.1.244:2380,etcd2=http://192.168.1.244:2381,etcd3=http://192.168.1.244:2382
+# etc节点名称，对应节点例表中的数据
+ETCD_NODENAME=etcd1
+# etcd集群间访问地址
+PATRONI_ETCD_PEER_URL=http://192.168.1.244:2380
+# pgsql的外部连接地址
+POSTGRESQL_CONNECT_ADDRESS=192.168.1.244:5433
+# patroni模式，如果为cluster则启用集群模式
+PATRONI_MODE=cluster
+````
+#### postgres.yml
+
+常规使用，除了数据库的密码，其他几乎无需修改。详细的描述请参考[YAML Configuration Settings](https://github.com/zalando/patroni/blob/master/docs/SETTINGS.rst)
+
+```
+scope: batman
+#namespace: /service/
+name: postgresql0
+
+restapi:
+  listen: 127.0.0.1:8008
+  connect_address: 127.0.0.1:8008
+#  certfile: /etc/ssl/certs/ssl-cert-snakeoil.pem
+#  keyfile: /etc/ssl/private/ssl-cert-snakeoil.key
+#  authentication:
+#    username: username
+#    password: password
+
+# ctl:
+#   insecure: false # Allow connections to SSL sites without certs
+#   certfile: /etc/ssl/certs/ssl-cert-snakeoil.pem
+#   cacert: /etc/ssl/certs/ssl-cacert-snakeoil.pem
+
+etcd:
+  #Provide host to do the initial discovery of the cluster topology:
+  host: 127.0.0.1:2379
+  #Or use "hosts" to provide multiple endpoints
+  #Could be a comma separated string:
+  #hosts: host1:port1,host2:port2
+  #or an actual yaml list:
+  #hosts:
+  #- host1:port1
+  #- host2:port2
+  #Once discovery is complete Patroni will use the list of advertised clientURLs
+  #It is possible to change this behavior through by setting:
+  #use_proxies: true
+
+#raft:
+#  data_dir: .
+#  self_addr: 127.0.0.1:2222
+#  partner_addrs:
+#  - 127.0.0.1:2223
+#  - 127.0.0.1:2224
+
+bootstrap:
+  # this section will be written into Etcd:/<namespace>/<scope>/config after initializing new cluster
+  # and all other cluster members will use it as a `global configuration`
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+#    master_start_timeout: 300
+#    synchronous_mode: false
+    #standby_cluster:
+      #host: 127.0.0.1
+      #port: 1111
+      #primary_slot_name: patroni
+    postgresql:
+      use_pg_rewind: true
+#      use_slots: true
+      parameters:
+#        wal_level: hot_standby
+#        hot_standby: "on"
+         max_connections: 1000
+#        max_worker_processes: 8
+#        wal_keep_segments: 8
+#        max_wal_senders: 10
+#        max_replication_slots: 10
+#        max_prepared_transactions: 0
+#        max_locks_per_transaction: 64
+#        wal_log_hints: "on"
+#        track_commit_timestamp: "off"
+#        archive_mode: "on"
+#        archive_timeout: 1800s
+#        archive_command: mkdir -p ../wal_archive && test ! -f ../wal_archive/%f && cp %p ../wal_archive/%f
+#      recovery_conf:
+#        restore_command: cp ../wal_archive/%f %p
+
+  # some desired options for 'initdb'
+  initdb:  # Note: It needs to be a list (some options need values, others are switches)
+  - encoding: UTF8
+  - data-checksums
+
+  pg_hba:  # Add following lines to pg_hba.conf after running 'initdb'
+  # For kerberos gss based connectivity (discard @.*$)
+  #- host replication replicator 127.0.0.1/32 gss include_realm=0
+  #- host all all 0.0.0.0/0 gss include_realm=0
+  - host replication replicator all md5
+  - host all all all md5
+#  - hostssl all all 0.0.0.0/0 md5
+
+  # Additional script to be launched after initial cluster creation (will be passed the connection URL as parameter)
+# post_init: /usr/local/bin/setup_cluster.sh
+
+  # Some additional users users which needs to be created after initializing new cluster
+  users:
+    admin:
+      password: admin
+      options:
+        - createrole
+        - createdb
+
+postgresql:
+  listen: 127.0.0.1:5432
+  connect_address: 127.0.0.1:5432
+  data_dir: /usr/lib/postgresql/10/data
+#  bin_dir:
+#  config_dir:
+  pgpass: /tmp/pgpass0
+  authentication:
+    replication:
+      username: replicator
+      password: rep-pass
+    superuser:
+      username: postgres
+      password: postgres@digibird
+    rewind:  # Has no effect on postgres 10 and lower
+      username: rewind_user
+      password: rewind_password
+  # Server side kerberos spn
+#  krbsrvname: postgres
+  parameters:
+    # Fully qualified kerberos ticket file for the running user
+    # same as KRB5CCNAME used by the GSS
+#   krb_server_keyfile: /var/spool/keytabs/postgres
+    unix_socket_directories: '.'
+  # Additional fencing script executed after acquiring the leader lock but before promoting the replica
+  #pre_promote: /path/to/pre_promote.sh
+
+#watchdog:
+#  mode: automatic # Allowed values: off, automatic, required
+#  device: /dev/watchdog
+#  safety_margin: 5
+
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
+
+```
+
+#### Datasource
+
+相应的datasource也需要修改成多主机，如下：jdbc驱动会连接主节点进行数据访问。
+
+```
+spring:
+  datasource:
+    url: jdbc:${DATABASE_DBTYPE:postgresql}://192.168.1.244:5433,192.168.1.244:5434,192.168.1.244:5435/postgres?targetServerType=primary&currentSchema=public
+```
+
+### 启动容器
+
+```
+docker run -d --name test -p 2380:2380 -p 5433:5432 --env-file F:\3-cluster\pgsql\pgsql_conf\patroni.env  -v F:\3-cluster\pgsql\pgsql_conf\postgres.yml:/usr/lib/postgresql/10/postgres.yml digibird/patroni_pgsql10
+
+docker run -d --name test1 -p 2381:2380 -p 5434:5432 --env-file F:\3-cluster\pgsql\pgsql_conf\patroni1.env  -v F:\3-cluster\pgsql\pgsql_conf\postgres.yml:/usr/lib/postgresql/10/postgres.yml digibird/patroni_pgsql10
+
+docker run -d --name test2 -p 2382:2380 -p 5435:5432 --env-file F:\3-cluster\pgsql\pgsql_conf\patroni2.env  -v F:\3-cluster\pgsql\pgsql_conf\postgres.yml:/usr/lib/postgresql/10/postgres.yml digibird/patroni_pgsql10
+```
