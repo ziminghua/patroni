@@ -145,7 +145,7 @@ postgresql:
       password: rep-pass
     superuser:
       username: postgres
-      password: postgres@digibird
+      password: digibird
     rewind:  # Has no effect on postgres 10 and lower
       username: rewind_user
       password: rewind_password
