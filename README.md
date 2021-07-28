@@ -1,5 +1,3 @@
-|Tests Status| |Coverage Status|
-
 # Patroni 一款PGSQL高可用的方案
 
 ## 仓库目的
