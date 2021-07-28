@@ -1,20 +1,21 @@
 ## This Dockerfile is meant to aid in the building and debugging patroni whilst developing on your local machine
 ## It has all the necessary components to play/debug with a single node appliance, running etcd
 ARG PG_MAJOR=10
+ARG PG_VERSION=10.15
 ARG COMPRESS=false
-ARG PGHOME=/home/postgres
+ARG PGHOME=/usr/lib/postgresql/$PG_MAJOR/
 ARG PGDATA=$PGHOME/data
 ARG LC_ALL=C.UTF-8
 ARG LANG=C.UTF-8
 
-FROM postgres:$PG_MAJOR as builder
+FROM postgres:$PG_VERSION as builder
 
 ARG PGHOME
 ARG PGDATA
 ARG LC_ALL
 ARG LANG
 
-ENV ETCDVERSION=3.3.13 CONFDVERSION=0.16.0
+ENV ETCDVERSION=3.3.13
 
 RUN set -ex \
     && export DEBIAN_FRONTEND=noninteractive \
@@ -22,11 +23,10 @@ RUN set -ex \
     && apt-get update -y \
     # postgres:10 is based on debian, which has the patroni package. We will install all required dependencies
     && apt-cache depends patroni | sed -n -e 's/.*Depends: \(python3-.\+\)$/\1/p' \
-            | grep -Ev '^python3-(sphinx|etcd|consul|kazoo|kubernetes)' \
-            | xargs apt-get install -y vim curl less jq locales haproxy sudo \
+            | grep -Ev '^python3-(sphinx|etcd)' \
+            | xargs apt-get install -y vim curl less jq locales sudo \
                             python3-etcd python3-kazoo python3-pip busybox \
                             net-tools iputils-ping --fix-missing \
-    && pip3 install dumb-init \
 \
     # Cleanup all locales but en_US.UTF-8
     && find /usr/share/i18n/charmaps/ -type f ! -name UTF-8.gz -delete \
@@ -36,15 +36,12 @@ RUN set -ex \
     # Make sure we have a en_US.UTF-8 locale available
     && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
 \
-    # haproxy dummy config
-    && echo 'global\n        stats socket /run/haproxy/admin.sock mode 660 level admin' > /etc/haproxy/haproxy.cfg \
-\
     # vim config
     && echo 'syntax on\nfiletype plugin indent on\nset mouse-=a\nautocmd FileType yaml setlocal ts=2 sts=2 sw=2 expandtab' > /etc/vim/vimrc.local \
 \
-    # Prepare postgres/patroni/haproxy environment
-    && mkdir -p $PGHOME/.config/patroni /patroni /run/haproxy \
-    && ln -s ../../postgres0.yml $PGHOME/.config/patroni/patronictl.yaml \
+    # Prepare postgres/patroni environment
+    && mkdir -p $PGHOME/.config/patroni /patroni \
+    && ln -s $PGHOME/postgres.yml $PGHOME/.config/patroni/patronictl.yaml \
     && ln -s /patronictl.py /usr/local/bin/patronictl \
     && sed -i "s|/var/lib/postgresql.*|$PGHOME:/bin/bash|" /etc/passwd \
     && chown -R postgres:postgres /var/log \
@@ -52,10 +49,6 @@ RUN set -ex \
     # Download etcd
     && curl -sL https://github.com/coreos/etcd/releases/download/v${ETCDVERSION}/etcd-v${ETCDVERSION}-linux-amd64.tar.gz \
             | tar xz -C /usr/local/bin --strip=1 --wildcards --no-anchored etcd etcdctl \
-\
-    # Download confd
-    && curl -sL https://github.com/kelseyhightower/confd/releases/download/v${CONFDVERSION}/confd-${CONFDVERSION}-linux-amd64 \
-            > /usr/local/bin/confd && chmod +x /usr/local/bin/confd \
 \
     # Clean up all useless packages and some files
     && apt-get purge -y --allow-remove-essential python3-pip gzip bzip2 util-linux e2fsprogs \
@@ -117,7 +110,7 @@ RUN if [ "$COMPRESS" = "true" ]; then \
 FROM scratch
 COPY --from=builder / /
 
-LABEL maintainer="Alexander Kukushkin <alexander.kukushkin@zalando.de>"
+LABEL maintainer="ziminghua"
 
 ARG PG_MAJOR
 ARG COMPRESS
@@ -132,27 +125,56 @@ ENV LC_ALL=$LC_ALL LANG=$LANG EDITOR=/usr/bin/editor
 ENV PGDATA=$PGDATA PATH=$PATH:$PGBIN
 
 COPY patroni /patroni/
-COPY extras/confd/conf.d/haproxy.toml /etc/confd/conf.d/
-COPY extras/confd/templates/haproxy.tmpl /etc/confd/templates/
 COPY patroni*.py docker/entrypoint.sh /
-COPY postgres?.yml $PGHOME/
+COPY postgres.yml $PGHOME/
 
 WORKDIR $PGHOME
 
+RUN set -ex; \
+    if ! command -v gpg > /dev/null; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends \
+            gnupg \
+            dirmngr \
+        ; \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+    
+# grab gosu for easy step-down from root
+# https://github.com/tianon/gosu/releases
+ENV GOSU_VERSION 1.12
+RUN set -eux; \
+    savedAptMark="$(apt-mark showmanual)"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates wget; \
+    rm -rf /var/lib/apt/lists/*; \
+    dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"; \
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch"; \
+    wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc"; \
+    export GNUPGHOME="$(mktemp -d)"; \
+    gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \
+    gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \
+    gpgconf --kill all; \
+    rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc; \
+    apt-mark auto '.*' > /dev/null; \
+    [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark > /dev/null; \
+    apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+    chmod +x /usr/local/bin/gosu; \
+    gosu --version; \
+    gosu nobody true
+
 RUN sed -i 's/env python/&3/' /patroni*.py \
     # "fix" patroni configs
-    && sed -i 's/^\(  connect_address:\|  - host\)/#&/' postgres?.yml \
-    && sed -i 's/^  listen: 127.0.0.1/  listen: 0.0.0.0/' postgres?.yml \
-    && sed -i "s|^\(  data_dir: \).*|\1$PGDATA|" postgres?.yml \
-    && sed -i "s|^#\(  bin_dir: \).*|\1$PGBIN|" postgres?.yml \
-    && sed -i 's/^  - encoding: UTF8/  - locale: en_US.UTF-8\n&/' postgres?.yml \
-    && sed -i 's/^\(scope\|name\|etcd\|  host\|  authentication\|  pg_hba\|  parameters\):/#&/' postgres?.yml \
-    && sed -i 's/^    \(replication\|superuser\|rewind\|unix_socket_directories\|\(\(  \)\{0,1\}\(username\|password\)\)\):/#&/' postgres?.yml \
-    && sed -i 's/^      parameters:/      pg_hba:\n      - local all all trust\n      - host replication all all md5\n      - host all all all md5\n&\n        max_connections: 100/'  postgres?.yml \
+    && sed -i 's/^\(  connect_address:\|  - host\)/#&/' postgres.yml \
+    && sed -i 's/^  listen: 127.0.0.1/  listen: 0.0.0.0/' postgres.yml \
+    && sed -i "s|^\(  data_dir: \).*|\1$PGDATA|" postgres.yml \
+    && sed -i "s|^#\(  bin_dir: \).*|\1$PGBIN|" postgres.yml \
+    && sed -i 's/^  - encoding: UTF8/  - locale: en_US.UTF-8\n&/' postgres.yml \
+    && sed -i 's/^\(scope\|name\|etcd\|  host\|  authentication\|  pg_hba\|  parameters\):/#&/' postgres.yml \
+    && sed -i 's/^    \(replication\|superuser\|rewind\|unix_socket_directories\|\(\(  \)\{0,1\}\(username\|password\)\)\):/#&/' postgres.yml \
+    && sed -i 's/^      parameters:/      pg_hba:\n      - local all all trust\n      - host replication all all md5\n      - host all all all md5\n&\n        max_connections: 1000/'  postgres.yml \
     && if [ "$COMPRESS" = "true" ]; then chmod u+s /usr/bin/sudo; fi \
     && chmod +s /bin/ping \
-    && chown -R postgres:postgres $PGHOME /run /etc/haproxy
-
-USER postgres
+    && chown -R postgres:postgres $PGHOME /run
 
 ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
